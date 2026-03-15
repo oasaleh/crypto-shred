@@ -1,6 +1,6 @@
 # Crypto-Shred
 
-A macOS bash script that performs **crypto-erasure** (crypto-shredding) on USB drives, with support for **parallel execution** across multiple drives simultaneously.
+A macOS bash script that performs **crypto-erasure** (crypto-shredding) on USB drives and SD cards, with support for **parallel execution** across multiple drives simultaneously.
 
 ## What is Crypto-Shredding?
 
@@ -38,7 +38,7 @@ sudo ./crypto-shred.sh
 
 The script will:
 
-- Detect all connected external drives
+- Detect all connected external drives and SD cards
 - Let you select which ones to shred
 - Ask for the final format (ExFAT for cross-platform, or APFS for macOS-only)
 - Require you to type `SHRED` to confirm
@@ -51,7 +51,7 @@ This makes it practical to crypto-shred an entire batch of USB drives at once.
 
 ## Checking Progress
 
-Step 3 (filling with encrypted zeros) is the slowest step — its duration depends on drive size and write speed. To monitor progress in another terminal:
+Step 3 (filling with encrypted zeros) is the slowest step — its duration depends on drive size and write speed. The script automatically prints a progress table every 3 minutes. You can also check manually in another terminal:
 
 ```bash
 ls -lh /Volumes/CryptoShred*/.fill
@@ -63,13 +63,15 @@ Each drive gets its own `CryptoShred` volume (macOS appends numbers for duplicat
 
 ### Single drive
 
-```bash
-~ % sudo ./crypto-shred.sh
+```
+~/crypto-shred % sudo ./crypto-shred.sh
 Crypto-Shred
 Encrypt → Fill → Destroy key
 
-External drives:
-  1) /dev/disk6 — Flash Voyager (8.1 GB (8086618112 Bytes) (exactly 15794176 512-Byte-Units))
+Available drives:
+  1) /dev/disk6 — Built In SDXC Reader (988.3 MB (988282880 Bytes) (exactly 1930240 512-Byte-Units))
+  2) /dev/disk7 — USB Flash Drive (15.6 GB (15640625152 Bytes) (exactly 30548096 512-Byte-Units))
+  3) /dev/disk9 — Cruzer (32.0 GB (32015679488 Bytes) (exactly 62530624 512-Byte-Units))
 
 Select drives to shred (e.g. 1 2 3 or all):
 > 1
@@ -80,13 +82,13 @@ Final format after shred:
 Choice [1]: 1
 
 WARNING: ALL DATA WILL BE PERMANENTLY DESTROYED ON:
-  • /dev/disk6 — Flash Voyager (8.1 GB (8086618112 Bytes) (exactly 15794176 512-Byte-Units))
+  • /dev/disk6 — Built In SDXC Reader (988.3 MB (988282880 Bytes) (exactly 1930240 512-Byte-Units))
 
 Type SHRED to confirm:
 > SHRED
 
 [disk6] Step 1/4 — Formatting as APFS...
-[disk6] Step 2/4 — Encrypting volume (disk7s1)...
+[disk6] Step 2/4 — Encrypting volume (disk11s1)...
 [disk6] Step 3/4 — Filling with encrypted zeros (this takes a while)...
 [disk6] Step 4/4 — Destroying key — reformatting as ExFAT...
 [disk6] Crypto-shred complete.
@@ -96,19 +98,18 @@ All 1 drive(s) crypto-shredded successfully.
 
 ### Multiple drives (parallel)
 
-```bash
-~ % sudo ./crypto-shred.sh
+```
+~/crypto-shred % sudo ./crypto-shred.sh
 Crypto-Shred
 Encrypt → Fill → Destroy key
 
-External drives:
-  1) /dev/disk7 — Cruzer (32.0 GB (32015679488 Bytes) (exactly 62530624 512-Byte-Units))
-  2) /dev/disk8 — USB DISK (4.1 GB (4089446400 Bytes) (exactly 7987200 512-Byte-Units))
-  3) /dev/disk9 — USB Flash Drive (15.6 GB (15640625152 Bytes) (exactly 30548096 512-Byte-Units))
-  4) /dev/disk10 — UDisk (4.0 GB (4037017600 Bytes) (exactly 7884800 512-Byte-Units))
+Available drives:
+  1) /dev/disk6 — Built In SDXC Reader (988.3 MB (988282880 Bytes) (exactly 1930240 512-Byte-Units))
+  2) /dev/disk7 — USB Flash Drive (15.6 GB (15640625152 Bytes) (exactly 30548096 512-Byte-Units))
+  3) /dev/disk9 — Cruzer (32.0 GB (32015679488 Bytes) (exactly 62530624 512-Byte-Units))
 
 Select drives to shred (e.g. 1 2 3 or all):
-> 2 4
+> all
 
 Final format after shred:
   1) ExFAT  (macOS + Windows)
@@ -116,24 +117,40 @@ Final format after shred:
 Choice [1]: 1
 
 WARNING: ALL DATA WILL BE PERMANENTLY DESTROYED ON:
-  • /dev/disk8 — USB DISK (4.1 GB (4089446400 Bytes) (exactly 7987200 512-Byte-Units))
-  • /dev/disk10 — UDisk (4.0 GB (4037017600 Bytes) (exactly 7884800 512-Byte-Units))
+  • /dev/disk6 — Built In SDXC Reader (988.3 MB (988282880 Bytes) (exactly 1930240 512-Byte-Units))
+  • /dev/disk7 — USB Flash Drive (15.6 GB (15640625152 Bytes) (exactly 30548096 512-Byte-Units))
+  • /dev/disk9 — Cruzer (32.0 GB (32015679488 Bytes) (exactly 62530624 512-Byte-Units))
 
 Type SHRED to confirm:
 > SHRED
 
-[disk8] Step 1/4 — Formatting as APFS...
-[disk10] Step 1/4 — Formatting as APFS...
-[disk10] Step 2/4 — Encrypting volume (disk12s1)...
-[disk10] Step 3/4 — Filling with encrypted zeros (this takes a while)...
-[disk8] Step 2/4 — Encrypting volume (disk14s1)...
-[disk8] Step 3/4 — Filling with encrypted zeros (this takes a while)...
-[disk8] Step 4/4 — Destroying key — reformatting as ExFAT...
-[disk8] Crypto-shred complete.
-[disk10] Step 4/4 — Destroying key — reformatting as ExFAT...
-[disk10] Crypto-shred complete.
+[disk6] Step 1/4 — Formatting as APFS...
+[disk9] Step 1/4 — Formatting as APFS...
+[disk7] Step 1/4 — Formatting as APFS...
+[disk6] Step 2/4 — Encrypting volume (disk11s1)...
+[disk9] Step 2/4 — Encrypting volume (disk12s1)...
+[disk7] Step 2/4 — Encrypting volume (disk13s1)...
+[disk6] Step 3/4 — Filling with encrypted zeros (this takes a while)...
+[disk9] Step 3/4 — Filling with encrypted zeros (this takes a while)...
+[disk7] Step 3/4 — Filling with encrypted zeros (this takes a while)...
 
-All 2 drive(s) crypto-shredded successfully.
+— Progress (11:51:33) —
++---------------+-------+----------------------+---------------+--------+----------+
+| Volume        | Disk  | Drive                | Size          | Filled | Progress |
++---------------+-------+----------------------+---------------+--------+----------+
+| CryptoShred   | disk9 | Cruzer               | 31805923328 B | 2.5 GB | ~8%      |
+| CryptoShred 1 | disk7 | USB Flash Drive      | 15430868992 B | 244 MB | ~1%      |
+| CryptoShred 2 | disk6 | Built In SDXC Reader | 988241920 B   | 897 MB | ~95%     |
++---------------+-------+----------------------+---------------+--------+----------+
+
+[disk6] Step 4/4 — Destroying key — reformatting as ExFAT...
+[disk6] Crypto-shred complete.
+[disk7] Step 4/4 — Destroying key — reformatting as ExFAT...
+[disk7] Crypto-shred complete.
+[disk9] Step 4/4 — Destroying key — reformatting as ExFAT...
+[disk9] Crypto-shred complete.
+
+All 3 drive(s) crypto-shredded successfully.
 ```
 
 ## Requirements
