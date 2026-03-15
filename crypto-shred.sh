@@ -10,19 +10,40 @@ NC='\033[0m'
 echo -e "${BOLD}Crypto-Shred${NC}"
 echo -e "Encrypt → Fill → Destroy key\n"
 
-# Detect external drives
+# Detect removable drives (external USB + internal SD card reader)
+# Find the physical disk backing the boot volume, so we never touch it
+boot_container=$(diskutil info / | awk -F: '/Part of Whole/{print $2}' | xargs)
+boot_phys=$(diskutil info "$boot_container" | awk -F: '/Physical Store/{print $2}' | xargs | sed 's/s[0-9]*$//')
+
 disks=()
 while IFS= read -r line; do
     disks+=("$line")
-done < <(diskutil list external physical 2>/dev/null | grep -o '/dev/disk[0-9]*')
+done < <(diskutil list physical 2>/dev/null | grep -o '/dev/disk[0-9]*')
+
+# Filter out the boot disk and disk images
+filtered=()
+for d in "${disks[@]}"; do
+    disk_id=$(basename "$d")
+    # Skip the boot disk
+    if [[ "$disk_id" == "$boot_phys" ]]; then
+        continue
+    fi
+    # Skip disk images
+    proto=$(diskutil info "$d" 2>/dev/null | awk -F: '/Protocol/{print $2}' | xargs)
+    if [[ "$proto" == "Disk Image" ]]; then
+        continue
+    fi
+    filtered+=("$d")
+done
+disks=("${filtered[@]}")
 
 if [[ ${#disks[@]} -eq 0 ]]; then
-    echo -e "${RED}No external drives found.${NC}"
+    echo -e "${RED}No removable drives found.${NC}"
     exit 1
 fi
 
 # Display drives
-echo -e "${BOLD}External drives:${NC}"
+echo -e "${BOLD}Available drives:${NC}"
 for i in "${!disks[@]}"; do
     disk="${disks[$i]}"
     name=$(diskutil info "$disk" | awk -F: '/Media Name/{print $2}' | xargs)
@@ -126,8 +147,16 @@ shred_drive() {
         echo -e "${RED}${label} Volume not mounted, skipping fill.${NC}"
     fi
 
+    # Name based on drive type
+    local drive_label="USB"
+    local drive_proto
+    drive_proto=$(diskutil info "$disk" 2>/dev/null | awk -F: '/Protocol/{print $2}' | xargs)
+    if [[ "$drive_proto" == "Secure Digital" ]]; then
+        drive_label="SD"
+    fi
+
     echo -e "${YELLOW}${label} Step 4/4 — Destroying key — reformatting as ${FINAL_FS}...${NC}"
-    if ! diskutil eraseDisk "$FINAL_FS" "USB" GPT "$disk" > /dev/null 2>&1; then
+    if ! diskutil eraseDisk "$FINAL_FS" "$drive_label" GPT "$disk" > /dev/null 2>&1; then
         echo -e "${RED}${label} Failed final format.${NC}"; return 1
     fi
 
@@ -142,11 +171,89 @@ for d in "${selected[@]}"; do
     pids+=($!)
 done
 
+# Progress monitor — prints status every 3 minutes
+show_progress() {
+    while true; do
+        sleep 180
+        # Check if any shred processes are still running
+        local any_alive=false
+        for pid in "${pids[@]}"; do
+            if kill -0 "$pid" 2>/dev/null; then
+                any_alive=true
+                break
+            fi
+        done
+        $any_alive || return
+
+        echo -e "\n${BOLD}— Progress ($(date +%H:%M:%S)) —${NC}"
+        # Collect rows
+        local rows=()
+        for vol in /Volumes/CryptoShred*; do
+            [[ -d "$vol" ]] || continue
+            local volname disk media size_hr fill_hr size_bytes fill_bytes pct
+            volname=$(basename "$vol")
+            disk=$(diskutil info "$vol" 2>/dev/null | awk -F: '/Part of Whole/{print $2}' | xargs)
+            media=$(diskutil info "/dev/$disk" 2>/dev/null | awk -F: '/Media Name/{print $2}' | xargs)
+            size_hr=$(diskutil info "/dev/$disk" 2>/dev/null | awk -F'[()]' '/Disk Size/{print $2}' | grep -o '^[0-9.]* [A-Z]*')
+            size_bytes=$(diskutil info "/dev/$disk" 2>/dev/null | awk -F'[()]' '/Disk Size/{print $2}' | grep -o '[0-9]*')
+            fill_bytes=$(stat -f%z "$vol/.fill" 2>/dev/null || echo 0)
+            if [[ -n "$size_bytes" && "$size_bytes" -gt 0 ]]; then
+                # Human-readable fill size
+                if (( fill_bytes >= 1073741824 )); then
+                    fill_hr="$(awk "BEGIN{printf \"%.1f GB\", $fill_bytes/1073741824}")"
+                elif (( fill_bytes >= 1048576 )); then
+                    fill_hr="$(awk "BEGIN{printf \"%.0f MB\", $fill_bytes/1048576}")"
+                else
+                    fill_hr="$(awk "BEGIN{printf \"%.0f KB\", $fill_bytes/1024}")"
+                fi
+                pct=$((fill_bytes * 100 / size_bytes))
+                # Find the physical disk (container's parent)
+                local phys_disk
+                phys_disk=$(diskutil info "$vol" 2>/dev/null | awk -F: '/Part of Whole/{print $2}' | xargs)
+                phys_disk=$(diskutil info "$phys_disk" 2>/dev/null | awk -F: '/APFS Physical Store/{print $2}' | xargs | sed 's/s[0-9]*$//')
+                [[ -z "$phys_disk" ]] && phys_disk="$disk"
+                rows+=("${volname}|${phys_disk}|${media}|${size_hr}|${fill_hr}|~${pct}%")
+            fi
+        done
+
+        if [[ ${#rows[@]} -gt 0 ]]; then
+            # Calculate column widths
+            local w1=6 w2=4 w3=5 w4=4 w5=6 w6=8  # minimum header widths
+            for row in "${rows[@]}"; do
+                IFS='|' read -r c1 c2 c3 c4 c5 c6 <<< "$row"
+                (( ${#c1} > w1 )) && w1=${#c1}
+                (( ${#c2} > w2 )) && w2=${#c2}
+                (( ${#c3} > w3 )) && w3=${#c3}
+                (( ${#c4} > w4 )) && w4=${#c4}
+                (( ${#c5} > w5 )) && w5=${#c5}
+                (( ${#c6} > w6 )) && w6=${#c6}
+            done
+
+            # Print table
+            local hline="+-$(printf '%*s' $w1 '' | tr ' ' '-')-+-$(printf '%*s' $w2 '' | tr ' ' '-')-+-$(printf '%*s' $w3 '' | tr ' ' '-')-+-$(printf '%*s' $w4 '' | tr ' ' '-')-+-$(printf '%*s' $w5 '' | tr ' ' '-')-+-$(printf '%*s' $w6 '' | tr ' ' '-')-+"
+            echo "$hline"
+            printf "| ${BOLD}%-${w1}s${NC} | ${BOLD}%-${w2}s${NC} | ${BOLD}%-${w3}s${NC} | ${BOLD}%-${w4}s${NC} | ${BOLD}%-${w5}s${NC} | ${BOLD}%-${w6}s${NC} |\n" "Volume" "Disk" "Drive" "Size" "Filled" "Progress"
+            echo "$hline"
+            for row in "${rows[@]}"; do
+                IFS='|' read -r c1 c2 c3 c4 c5 c6 <<< "$row"
+                printf "| %-${w1}s | %-${w2}s | %-${w3}s | %-${w4}s | %-${w5}s | %-${w6}s |\n" "$c1" "$c2" "$c3" "$c4" "$c5" "$c6"
+            done
+            echo "$hline"
+        fi
+    done
+}
+show_progress &
+progress_pid=$!
+
 # Wait for all to finish
 failed=0
 for pid in "${pids[@]}"; do
     wait "$pid" || ((failed++))
 done
+
+# Stop the progress monitor
+kill "$progress_pid" 2>/dev/null
+wait "$progress_pid" 2>/dev/null
 
 echo ""
 if (( failed == 0 )); then
