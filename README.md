@@ -98,7 +98,6 @@ All 1 drive(s) crypto-shredded successfully.
 
 ```bash
 ~ % sudo ./crypto-shred.sh
-Password:
 Crypto-Shred
 Encrypt → Fill → Destroy key
 
